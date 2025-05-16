@@ -48,8 +48,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   //SDL_SetWindowFullscreen(window, true);
 
   mapGenerator = Retrograde::MapGenerator(mode->w, mode->h);
-
-  verts = mapGenerator.generateGroundVertices(100);
+  mapGenerator.generateMap(200);
+  
   startTime = SDL_GetPerformanceCounter();
   freqInv = 1.0 / (double)SDL_GetPerformanceFrequency();
 
@@ -63,39 +63,53 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
     SDL_Keycode key = event->key.key;
 
     if (key == SDLK_ESCAPE) return SDL_APP_SUCCESS;
-    if (key == SDLK_SPACE) verts = mapGenerator.generateGroundVertices(100);
+    if (key == SDLK_SPACE) mapGenerator.generateMap(200);
   }
 
   return SDL_APP_CONTINUE;
+}
+
+void renderStars(double elapsedSeconds) {
+  for (int i = 0; i < mapGenerator.starPoints.size(); ++i) {
+    float brightness = 255 * (0.7f + 0.3f * SDL_sin(elapsedSeconds + i));
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, brightness);
+    SDL_RenderPoint(renderer, mapGenerator.starPoints[i].x, mapGenerator.starPoints[i].y);
+  }
+}
+
+void renderTerrain(double elapsedSeconds) {
+  float brightness = 0.4f + 0.1f * SDL_sin(elapsedSeconds);
+
+  for (SDL_Vertex &vert : mapGenerator.triangulatedTerrain) {
+    vert.color.r = 0;
+    vert.color.g = 0;
+    vert.color.b = 0;
+  }
+
+  SDL_RenderGeometry(renderer, NULL, mapGenerator.triangulatedTerrain.data(), mapGenerator.triangulatedTerrain.size(), NULL, 0);
+
+  SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+  for (int i = 1; i < mapGenerator.terrainPoints.size(); i++) {
+    SDL_RenderLine(
+      renderer,
+      mapGenerator.terrainPoints[i - 1].x,
+      mapGenerator.terrainPoints[i - 1].y,
+      mapGenerator.terrainPoints[i].x,
+      mapGenerator.terrainPoints[i].y
+    ); 
+  }
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
   Uint64 now = SDL_GetPerformanceCounter();
   double elapsedSeconds = (now - startTime) * freqInv;
 
-  float brightness = 0.4f + 0.1f * SDL_sin(elapsedSeconds);
-
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
 
-  for (SDL_Vertex &vert : verts) {
-    vert.color.r = brightness;
-    vert.color.g = brightness;
-    vert.color.b = brightness;
-  }
-
-  SDL_RenderGeometry(renderer, NULL, verts.data(), verts.size(), NULL, 0);
-
-  SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
-  for (int i = 1; i < mapGenerator.rawPoints.size(); i++) {
-    SDL_RenderLine(
-      renderer,
-      mapGenerator.rawPoints[i - 1].x,
-      mapGenerator.rawPoints[i - 1].y,
-      mapGenerator.rawPoints[i].x,
-      mapGenerator.rawPoints[i].y
-    ); 
-  }
+  renderStars(elapsedSeconds);
+  renderTerrain(elapsedSeconds);
 
   SDL_RenderPresent(renderer);
 

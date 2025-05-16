@@ -3,18 +3,36 @@
 #include "SDL3/SDL_rect.h"
 #include <cmath>
 #include <cstdlib>
+#include <random>
+#include <unordered_map>
 #include <iostream>
 
-std::vector<SDL_Vertex> Retrograde::MapGenerator::generateGroundVertices(int pointDensity) {
+void Retrograde::MapGenerator::generateMap(int pointDensity) {
+  generateTerrainVertices(pointDensity);
+  generateSkyboxStars();
+}
+
+void Retrograde::MapGenerator::generateTerrainVertices(int pointDensity) {
   std::vector<SDL_FPoint> points = {{ 0, 0 }, { screenWidth, 0 }};
-  
-  // Randomly spread the points on the horizontal axis to get a nice distribution
-  for (int i = 0; i < pointDensity; ++i) {
-    points.push_back({
-      (float)((rand() % (int)(screenWidth - 100)) + 100),
-      0
-    });
+
+  float minPointSpacing = (screenWidth / (pointDensity * 2));
+
+  std::vector<float> potentialPointsX;
+  for (float i = minPointSpacing; i < screenWidth; i += minPointSpacing) {
+    potentialPointsX.push_back(i); 
   }
+
+  // Randomly spread the points on the horizontal axis to get a nice distribution
+  std::vector<float> chosen;
+  std::sample(
+    potentialPointsX.begin(),
+    potentialPointsX.end(),
+    std::back_inserter(chosen),
+    pointDensity,
+    std::mt19937{ std::random_device{}() }
+  );
+
+  for (float x : chosen) points.push_back({ x, 0 });
 
   std::sort(points.begin(), points.end(), [](SDL_FPoint p1, SDL_FPoint p2) {
     return p1.x < p2.x;
@@ -26,7 +44,7 @@ std::vector<SDL_Vertex> Retrograde::MapGenerator::generateGroundVertices(int poi
   // Add the heights in, but only allow slight variations in altitudes between points so
   // things don't get too spiky
   for (int i = 0; i < points.size(); ++i) {
-    int maxAltitudeDeviation = 80;
+    int maxAltitudeDeviation = 60;
   
     int direction = (rand() % 2 == 0) ? 1 : -1;
     if (i > 1) {
@@ -50,10 +68,20 @@ std::vector<SDL_Vertex> Retrograde::MapGenerator::generateGroundVertices(int poi
   points.push_back({ screenWidth, screenHeight });
   points.push_back({ 0, screenHeight });
 
-  rawPoints = points;
-  triangulatedMap = Triangulation::earClipping(points); 
+  terrainPoints = points;
+  triangulatedTerrain = Triangulation::earClipping(points); 
+}
 
-  return triangulatedMap; 
+void Retrograde::MapGenerator::generateSkyboxStars() {
+  int NUM_STARS = 300;
+  starPoints = {};
+
+  for (int i = 0; i < NUM_STARS; i++) {
+    starPoints.push_back({
+      (float)(rand() % (int)screenWidth),
+      (float)(rand() % (int)screenHeight)
+    }); 
+  }
 }
 
 float Retrograde::MapGenerator::clampToAltitudeBounds(float x) {
