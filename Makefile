@@ -11,17 +11,22 @@ else
 endif
 
 UNAME := $(shell uname)
-TARGET = build/retrograde
-SRCS = main.cpp
-OBJS = $(addprefix build/, $(SRCS:.cpp=.o))
 CXX = clang++
+BUILD_DIR = build
+TARGET = $(BUILD_DIR)/retrograde
+
+# Find all .cpp files in root and src/
+SRC_DIRS := src 
+SRCS := main.cpp $(shell find $(SRC_DIRS) -name '*.cpp')
+OBJS := $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SRCS))
+
 CXXFLAGS = -std=c++17 -Wall -Wextra $(SDL3_INCLUDE)
 LDFLAGS = $(SDL3_LIB)
 
 ifeq ($(UNAME), Darwin)
   CXXFLAGS += -arch arm64 -arch x86_64
   LDFLAGS += -arch arm64 -arch x86_64 \
-		-framework Cocoa \
+    -framework Cocoa \
     -framework AVFoundation \
     -framework CoreVideo \
     -framework CoreMedia \
@@ -34,7 +39,7 @@ ifeq ($(UNAME), Darwin)
     -framework CoreHaptics \
     -framework ForceFeedback \
     -framework Carbon \
-		-framework UniformTypeIdentifiers
+    -framework UniformTypeIdentifiers
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -46,8 +51,9 @@ endif
 $(TARGET): $(OBJS)
 	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
 
-build/%.o: %.cpp
-	@mkdir -p $(@D)
+# Pattern rule to compile source files into build dir
+$(BUILD_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(SDL3_INSTALL)/lib/libSDL3.a:
@@ -64,7 +70,7 @@ $(SDL3_INSTALL)/lib/libSDL3.a:
 	@echo ">>> SDL3 installed to $(SDL3_INSTALL)"
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD_DIR)
 
 distclean: clean
 	rm -rf deps/SDL3/$(SDL3_PLATFORM)/build
