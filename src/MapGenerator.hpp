@@ -1,20 +1,16 @@
-#include "SDL3/SDL_render.h"
-#include <vector>
+#pragma once
+#include "GameLevel.hpp"
 
 namespace Retrograde {
   class MapGenerator {
   public:
-    std::vector<SDL_FPoint> terrainPoints;
-    std::vector<SDL_Vertex> triangulatedTerrain;
-    std::vector<SDL_FPoint> starPoints;
-
     MapGenerator() = default;
     MapGenerator(float width, float height) : screenWidth(width), screenHeight(height) {
-      minAltitude = height - (height / 100.0 * 5);
-      maxAltitude = height - (height / 100.0 * 50);
+      minAltitude = height / 100.0 * 5;
+      maxAltitude = height / 100.0 * 50;
     }
 
-    void generateMap(int pointDensity);
+    void generateMap(int pointDensity, GameLevel &level);
 
   private:
     float screenWidth;
@@ -22,8 +18,8 @@ namespace Retrograde {
     float minAltitude;
     float maxAltitude;
 
-    void generateTerrainVertices(int pointDensity);
-    void generateSkyboxStars();
+    void generateTerrainVertices(int pointDensity, GameLevel &level);
+    void generateSkyboxStars(GameLevel &level);
 
     float clampToAltitudeBounds(float x);
   };

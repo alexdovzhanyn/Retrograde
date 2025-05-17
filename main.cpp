@@ -1,7 +1,12 @@
 #include "SDL3/SDL_init.h"
 #include "SDL3/SDL_keycode.h"
+#include "SDL3/SDL_keyboard.h"
+#include "SDL3/SDL_oldnames.h"
+#include "SDL3/SDL_rect.h"
 #include "SDL3/SDL_render.h"
+#include "SDL3/SDL_stdinc.h"
 #include "SDL3/SDL_video.h"
+#include "src/CartesianPoint.hpp"
 #include <cstdlib>
 #include <ctime>
 #include <vector>
@@ -9,48 +14,34 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <iostream>
+#include "src/GameManager.hpp"
 #include "src/MapGenerator.hpp"
+#include "src/Lander.hpp"
 
-static SDL_Window *window = NULL;
-static SDL_Renderer *renderer = NULL;
-static const SDL_DisplayMode *mode = NULL;
-static Uint64 startTime = 0;
 static double freqInv = 0.0;
+
 std::vector<SDL_Vertex> verts;
 Retrograde::MapGenerator mapGenerator;
+Retrograde::Entity *lander;
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
   srand(time(0));
 
-  SDL_SetAppMetadata("Retrograde", "1.0", "retrograde");
+  try {
+    SDL_AppResult result = Retrograde::GameManager::init();
 
-  if (!SDL_Init(SDL_INIT_VIDEO)) {
-    SDL_Log("Failed to initialize SDL: %s", SDL_GetError());
+    if (result != SDL_APP_CONTINUE) return result;
+  } catch (const std::exception &e) {
+    SDL_Log("Initialization error: %s", e.what());
     return SDL_APP_FAILURE;
   }
 
-  // Force VSync and hardware acceleration
-  SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl"); 
-  SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
-
-  SDL_DisplayID display = SDL_GetPrimaryDisplay();
-  mode = SDL_GetCurrentDisplayMode(display);
-  if (!mode) {
-    SDL_Log("Failed to get current display mode: %s", SDL_GetError());
-    return SDL_APP_FAILURE;
-  }
-
-  if (!SDL_CreateWindowAndRenderer("Retrograde", mode->w, mode->h, SDL_WINDOW_BORDERLESS, &window, &renderer)) {
-    SDL_Log("Failed to create window and renderer: %s", SDL_GetError());
-    return SDL_APP_FAILURE;
-  }
+  lander = new Retrograde::Lander();
+  lander->setPosition(600, 600);
+  Retrograde::GameManager::newLevel();
 
   //SDL_SetWindowFullscreen(window, true);
-
-  mapGenerator = Retrograde::MapGenerator(mode->w, mode->h);
-  mapGenerator.generateMap(200);
   
-  startTime = SDL_GetPerformanceCounter();
   freqInv = 1.0 / (double)SDL_GetPerformanceFrequency();
 
   return SDL_APP_CONTINUE;
@@ -63,53 +54,90 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
     SDL_Keycode key = event->key.key;
 
     if (key == SDLK_ESCAPE) return SDL_APP_SUCCESS;
-    if (key == SDLK_SPACE) mapGenerator.generateMap(200);
+    if (key == SDLK_SPACE) Retrograde::GameManager::newLevel();
   }
 
   return SDL_APP_CONTINUE;
 }
 
+void renderLander() {
+  SDL_Renderer *renderer = Retrograde::GameManager::getRenderer();
+  SDL_RenderTexture(renderer, lander->texture, NULL, &lander->textureRect);
+
+  // SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+  // for (int i = 1; i < lander->localCollider.size(); i++) {
+  //   SDL_FPoint prev = lander->localCollider[i - 1];
+  //   SDL_FPoint curr = lander->localCollider[i];
+
+  //   SDL_RenderLine(renderer, prev.x, prev.y, curr.x, curr.y); 
+  // }
+}
+
 void renderStars(double elapsedSeconds) {
-  for (int i = 0; i < mapGenerator.starPoints.size(); ++i) {
+  Retrograde::GameLevel &level = Retrograde::GameManager::getCurrentLevel();
+
+  int i = 0;
+  for (Retrograde::CartesianPoint &point : level.skyboxStarPoints) {
+    point.x += 0.5;
+    point.y += 0.15;
+
+    float screenWidth = Retrograde::GameManager::getScreenWidth();
+    float screenHeight = Retrograde::GameManager::getScreenHeight();
+
+    if (point.x > screenWidth || point.y < 0) {
+      if (rand() % 2 == 0) {
+        point.x = rand() % (int)screenWidth;
+        point.y = 0;
+      } else {
+        point.x = 0;
+        point.y = rand() % (int)screenHeight;
+      }
+    }
+
+    SDL_Renderer *renderer = Retrograde::GameManager::getRenderer();
     float brightness = 255 * (0.7f + 0.3f * SDL_sin(elapsedSeconds + i));
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, brightness);
-    SDL_RenderPoint(renderer, mapGenerator.starPoints[i].x, mapGenerator.starPoints[i].y);
+    SDL_RenderPoint(renderer, point.x, point.y);
+    ++i;
   }
 }
 
 void renderTerrain(double elapsedSeconds) {
-  float brightness = 0.4f + 0.1f * SDL_sin(elapsedSeconds);
+  Retrograde::GameLevel level = Retrograde::GameManager::getCurrentLevel();
+  SDL_Renderer *renderer = Retrograde::GameManager::getRenderer();
 
-  for (SDL_Vertex &vert : mapGenerator.triangulatedTerrain) {
-    vert.color.r = 0;
-    vert.color.g = 0;
-    vert.color.b = 0;
-  }
-
-  SDL_RenderGeometry(renderer, NULL, mapGenerator.triangulatedTerrain.data(), mapGenerator.triangulatedTerrain.size(), NULL, 0);
+  SDL_RenderGeometry(renderer, NULL, level.triangulatedTerrain.data(), level.triangulatedTerrain.size(), NULL, 0);
 
   SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
-  for (int i = 1; i < mapGenerator.terrainPoints.size(); i++) {
-    SDL_RenderLine(
-      renderer,
-      mapGenerator.terrainPoints[i - 1].x,
-      mapGenerator.terrainPoints[i - 1].y,
-      mapGenerator.terrainPoints[i].x,
-      mapGenerator.terrainPoints[i].y
-    ); 
+  for (int i = 1; i < level.terrainPoints.size(); i++) {
+    SDL_FPoint prev = level.terrainPoints[i - 1];
+    SDL_FPoint curr = level.terrainPoints[i];
+
+    SDL_RenderLine(renderer, prev.x, prev.y, curr.x, curr.y); 
   }
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
-  Uint64 now = SDL_GetPerformanceCounter();
-  double elapsedSeconds = (now - startTime) * freqInv;
+  double elapsedSeconds = Retrograde::GameManager::getCurrentTick() * freqInv;
+
+  SDL_Renderer *renderer = Retrograde::GameManager::getRenderer();
 
   SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
 
+  // Poll keyboard state
+  int numKeys;
+  const bool *keystate = SDL_GetKeyboardState(&numKeys);
+
+  if (keystate[SDL_SCANCODE_W]) lander->setPosition(lander->position.x, lander->position.y + 5);
+  if (keystate[SDL_SCANCODE_A]) lander->setPosition(lander->position.x - 5, lander->position.y);
+  if (keystate[SDL_SCANCODE_S]) lander->setPosition(lander->position.x, lander->position.y - 5);
+  if (keystate[SDL_SCANCODE_D]) lander->setPosition(lander->position.x + 5, lander->position.y);
+
   renderStars(elapsedSeconds);
   renderTerrain(elapsedSeconds);
+  renderLander();
 
   SDL_RenderPresent(renderer);
 
@@ -117,5 +145,5 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
-  // SDL cleans up the window and renderer automatically.
+  delete lander;
 }
